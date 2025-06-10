@@ -1,55 +1,91 @@
-from flask import Flask, request, render_template_string, redirect, url_for
+from flask import Flask, request, render_template_string
 import os
 import uuid
 
 app = Flask(__name__)
 
-# In-memory store for previews
+# In-memory preview store
 PREVIEW_DATA = {}
 
-# Form page HTML
-FORM_HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Mr Rocky OG Link Generator</title>
-  <style>
-    body { font-family: sans-serif; padding: 2rem; text-align: center; }
-    input, textarea { width: 300px; padding: 0.5rem; margin: 0.5rem 0; }
-    button { padding: 0.7rem 1.5rem; font-weight: bold; }
-    .logo { font-size: 2rem; font-weight: bold; margin-bottom: 1rem; color: #333; }
-  </style>
-</head>
-<body>
-  <div class="logo">Mr Rocky 🔗</div>
-  <form method="POST" action="/generate">
-    <input name="title" placeholder="Enter Title" required><br>
-    <textarea name="desc" placeholder="Enter Description" required></textarea><br>
-    <input name="image" placeholder="Enter Image URL" required><br>
-    <input name="url" placeholder="Enter Target URL" required><br>
-    <button type="submit">Generate Preview Link</button>
-  </form>
-</body>
-</html>
-"""
-
-# Home route: Form page
+# Home Page (Form UI)
 @app.route("/", methods=["GET"])
 def home():
-    return FORM_HTML
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Mr Rocky OG Link Generator</title>
+      <style>
+        body {
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          background: linear-gradient(to right, #667eea, #764ba2);
+          color: #fff;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+        }
+        .container {
+          background: rgba(0, 0, 0, 0.4);
+          padding: 2rem 3rem;
+          border-radius: 1rem;
+          box-shadow: 0 4px 30px rgba(0,0,0,0.1);
+          width: 90%;
+          max-width: 500px;
+        }
+        h1 {
+          text-align: center;
+          margin-bottom: 1rem;
+        }
+        input, textarea {
+          width: 100%;
+          padding: 0.8rem;
+          margin: 0.5rem 0;
+          border: none;
+          border-radius: 8px;
+        }
+        button {
+          width: 100%;
+          padding: 0.8rem;
+          margin-top: 1rem;
+          background-color: #48bb78;
+          border: none;
+          border-radius: 8px;
+          font-size: 1rem;
+          font-weight: bold;
+          cursor: pointer;
+        }
+        button:hover {
+          background-color: #38a169;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>🔗 Mr Rocky Link Generator</h1>
+        <form method="POST" action="/generate">
+          <input type="text" name="title" placeholder="Enter Title" required>
+          <textarea name="desc" placeholder="Enter Description" rows="3" required></textarea>
+          <input type="text" name="image" placeholder="Enter Image URL" required>
+          <input type="text" name="url" placeholder="Enter Target URL" required>
+          <button type="submit">Generate Preview Link</button>
+        </form>
+      </div>
+    </body>
+    </html>
+    """
 
-# Generate preview link
+# Preview generation
 @app.route("/generate", methods=["POST"])
 def generate():
     title = request.form["title"]
     desc = request.form["desc"]
     image = request.form["image"]
     url = request.form["url"]
-
-    # Generate a short key
     key = str(uuid.uuid4())[:6]
 
-    # Save data in memory
     PREVIEW_DATA[key] = {
         "title": title,
         "desc": desc,
@@ -57,15 +93,24 @@ def generate():
         "url": url
     }
 
-    # Return shareable preview link
     full_url = request.url_root + "p/" + key
     return f"""
-    <p>✅ Preview link generated:</p>
-    <p><a href="{full_url}" target="_blank">{full_url}</a></p>
-    <p>Share this link on Facebook, WhatsApp, etc.</p>
+    <html>
+    <head>
+    <style>
+      body {{ font-family: sans-serif; text-align: center; padding-top: 100px; }}
+      a {{ font-size: 1.2rem; color: #2b6cb0; }}
+    </style>
+    </head>
+    <body>
+      <h2>✅ Preview Link Generated!</h2>
+      <p><a href="{full_url}" target="_blank">{full_url}</a></p>
+      <p>Share it on Facebook, WhatsApp, etc.</p>
+    </body>
+    </html>
     """
 
-# Serve OG preview page
+# Preview route
 @app.route("/p/<key>")
 def preview_page(key):
     data = PREVIEW_DATA.get(key)
@@ -75,7 +120,7 @@ def preview_page(key):
     user_agent = request.headers.get('User-Agent', '').lower()
     is_facebook = 'facebookexternalhit' in user_agent or 'facebot' in user_agent
 
-    # Serve OG meta tags without redirect for Facebook crawler
+    # For Facebook crawler: only meta tags
     if is_facebook:
         return render_template_string("""
         <html prefix="og: http://ogp.me/ns#">
@@ -89,12 +134,12 @@ def preview_page(key):
           <title>{{ title }}</title>
         </head>
         <body>
-          Facebook crawler detected. OG tags served.
+          Facebook crawler detected.
         </body>
         </html>
         """, **data)
 
-    # For normal users, show preview and redirect after 3 sec
+    # For regular users: background with image
     return render_template_string("""
     <!DOCTYPE html>
     <html>
@@ -107,8 +152,31 @@ def preview_page(key):
       <meta property="og:url" content="{{ url }}">
       <title>{{ title }}</title>
       <style>
-        body { font-family: sans-serif; text-align: center; padding-top: 50px; }
-        img { max-width: 300px; margin-top: 20px; }
+        body {
+          margin: 0;
+          padding: 0;
+          font-family: sans-serif;
+          background-image: url('{{ image }}');
+          background-repeat: repeat-y;
+          background-size: contain;
+          background-position: center top;
+          height: 100vh;
+          color: white;
+          text-shadow: 1px 1px 3px black;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          backdrop-filter: blur(1px);
+        }
+        .overlay {
+          background-color: rgba(0, 0, 0, 0.5);
+          padding: 2rem;
+          border-radius: 1rem;
+        }
+        a {
+          color: yellow;
+        }
       </style>
       <script>
         setTimeout(function() {
@@ -117,14 +185,15 @@ def preview_page(key):
       </script>
     </head>
     <body>
-      <h2>Redirecting to your site...</h2>
-      <p>If you are not redirected, <a href="{{ url }}">click here</a>.</p>
-      <img src="{{ image }}" alt="Preview Image">
+      <div class="overlay">
+        <h2>Redirecting to your site...</h2>
+        <p>If not redirected, <a href="{{ url }}">click here</a>.</p>
+      </div>
     </body>
     </html>
     """, **data)
 
-# Run server
+# Run the server
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
