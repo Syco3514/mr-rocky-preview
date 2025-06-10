@@ -1,38 +1,14 @@
 from flask import Flask, request, render_template_string, redirect, url_for
+import os
+import uuid
 
 app = Flask(__name__)
 
-HTML_FORM = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Mr Rocky Link Generator</title>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-        input, button { padding: 10px; margin: 10px; width: 80%%; max-width: 400px; }
-        .container { max-width: 500px; margin: auto; }
-        h1 { color: #333; }
-        .logo { font-size: 24px; font-weight: bold; color: #007BFF; }
-        .link-box { background: #f2f2f2; padding: 10px; word-break: break-all; margin-top: 20px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="logo">🔗 Mr Rocky Link Preview</div>
-        <h1>Create a Link with Preview</h1>
-        <form action="/generate" method="post" target="_blank">
-            <input type="text" name="title" placeholder="Enter Title" required><br>
-            <input type="text" name="desc" placeholder="Enter Description" required><br>
-            <input type="url" name="img" placeholder="Enter Image URL" required><br>
-            <input type="url" name="url" placeholder="Enter Target URL" required><br>
-            <button type="submit">Generate Preview Link</button>
-        </form>
-    </div>
-</body>
-</html>
-"""
+# In-memory store for previews
+PREVIEW_DATA = {}
 
-HTML_PREVIEW = """
+# Template for the OG preview page
+OG_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -41,56 +17,88 @@ HTML_PREVIEW = """
   <meta property="og:description" content="{{ desc }}">
   <meta property="og:image" content="{{ image }}">
   <meta property="og:type" content="website">
-  <meta http-equiv="refresh" content="2;url={{ url }}">
+  <meta http-equiv="refresh" content="3;url={{ url }}">
   <title>{{ title }}</title>
   <style>
     body { font-family: sans-serif; text-align: center; padding-top: 50px; }
     img { max-width: 300px; margin-top: 20px; }
-    .logo { font-size: 20px; font-weight: bold; color: #007BFF; margin-bottom: 20px; }
   </style>
 </head>
 <body>
-  <div class="logo">Mr Rocky</div>
   <h2>Redirecting to your site...</h2>
-  <p>If you are not redirected, <a href="{{ url }}" target="_blank">click here</a>.</p>
+  <p>If you are not redirected, <a href="{{ url }}">click here</a>.</p>
   <img src="{{ image }}" alt="Preview Image">
 </body>
 </html>
 """
 
-@app.route("/")
-def form():
-    return render_template_string(HTML_FORM)
+# Form page
+FORM_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mr Rocky OG Link Generator</title>
+  <style>
+    body { font-family: sans-serif; padding: 2rem; text-align: center; }
+    input, textarea { width: 300px; padding: 0.5rem; margin: 0.5rem 0; }
+    button { padding: 0.7rem 1.5rem; font-weight: bold; }
+    .logo { font-size: 2rem; font-weight: bold; margin-bottom: 1rem; color: #333; }
+  </style>
+</head>
+<body>
+  <div class="logo">Mr Rocky 🔗</div>
+  <form method="POST" action="/generate">
+    <input name="title" placeholder="Enter Title" required><br>
+    <textarea name="desc" placeholder="Enter Description" required></textarea><br>
+    <input name="image" placeholder="Enter Image URL" required><br>
+    <input name="url" placeholder="Enter Target URL" required><br>
+    <button type="submit">Generate Preview Link</button>
+  </form>
+</body>
+</html>
+"""
 
+# Home: form input
+@app.route("/", methods=["GET"])
+def home():
+    return FORM_HTML
+
+# Generate preview and save data
 @app.route("/generate", methods=["POST"])
 def generate():
-    title = request.form.get("title")
-    desc = request.form.get("desc")
-    image = request.form.get("img")
-    url = request.form.get("url")
+    title = request.form["title"]
+    desc = request.form["desc"]
+    image = request.form["image"]
+    url = request.form["url"]
 
-    # Create final preview link
-    full_url = url_for("preview", title=title, desc=desc, img=image, url=url, _external=True)
+    # Create a unique key
+    key = str(uuid.uuid4())[:6]
+
+    # Save data to dictionary
+    PREVIEW_DATA[key] = {
+        "title": title,
+        "desc": desc,
+        "image": image,
+        "url": url
+    }
+
+    # Return full preview link
+    full_url = request.url_root + "p/" + key
     return f"""
-    <html>
-    <head><title>Generated Link</title></head>
-    <body style='text-align:center; padding-top:50px; font-family:sans-serif;'>
-      <h2>Your preview link is ready 🎉</h2>
-      <div class="link-box" style="padding:10px; background:#f2f2f2; margin:20px auto; width:80%; max-width:600px;">
-        <a href="{full_url}" target="_blank">{full_url}</a>
-      </div>
-      <p>Share this link on social media or click to test it.</p>
-    </body>
-    </html>
+    <p>✅ Preview link generated:</p>
+    <p><a href="{full_url}" target="_blank">{full_url}</a></p>
+    <p>Share this link on Facebook, WhatsApp, etc.</p>
     """
 
-@app.route("/preview")
-def preview():
-    title = request.args.get("title", "Default Title")
-    desc = request.args.get("desc", "Default Description")
-    image = request.args.get("img", "https://via.placeholder.com/600x400.png?text=Preview+Image")
-    url = request.args.get("url", "https://example.com")
-    return render_template_string(HTML_PREVIEW, url=url, title=title, desc=desc, image=image)
+# Serve actual OG preview page
+@app.route("/p/<key>")
+def preview_page(key):
+    data = PREVIEW_DATA.get(key)
+    if not data:
+        return "❌ Preview not found", 404
+    return render_template_string(OG_TEMPLATE, **data)
 
+# Run the server
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
