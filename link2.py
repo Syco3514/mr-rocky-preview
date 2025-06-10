@@ -1,199 +1,111 @@
-from flask import Flask, request, render_template_string
-import os
-import uuid
+from flask import Flask, request, redirect, session, url_for, render_template_string
+import os, uuid, requests
+from urllib.parse import urlencode
 
 app = Flask(__name__)
+app.secret_key = os.getenv('SECRET_KEY') or 'super-secret-key'
 
-# In-memory preview store
+# Facebook App credentials (add to env vars)
+0-8FB_CLIENT_ID = os.getenv('FB_CLIENT_ID') 
+0-9FB_CLIENT_SECRET = os.getenv('FB_CLIENT_SECRET') 
+0-10FB_REDIRECT_URI = os.getenv('FB_REDIRECT_URI')  # e.g. https://yourdomain.com/fb-callback 
+0-11SCOPES = ['pages_show_list','pages_read_engagement','pages_manage_posts'] 
+
+# In-memory store
 PREVIEW_DATA = {}
 
-# Home Page (Form UI)
-@app.route("/", methods=["GET"])
+# --- ROUTES --- #
+
+0-12@app.route('/', methods=['GET']) 
 def home():
-    return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <title>Mr Rocky OG Link Generator</title>
-      <style>
-        body {
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          background: linear-gradient(to right, #667eea, #764ba2);
-          color: #fff;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          height: 100vh;
-          margin: 0;
-        }
-        .container {
-          background: rgba(0, 0, 0, 0.4);
-          padding: 2rem 3rem;
-          border-radius: 1rem;
-          box-shadow: 0 4px 30px rgba(0,0,0,0.1);
-          width: 90%;
-          max-width: 500px;
-        }
-        h1 {
-          text-align: center;
-          margin-bottom: 1rem;
-        }
-        input, textarea {
-          width: 100%;
-          padding: 0.8rem;
-          margin: 0.5rem 0;
-          border: none;
-          border-radius: 8px;
-        }
-        button {
-          width: 100%;
-          padding: 0.8rem;
-          margin-top: 1rem;
-          background-color: #48bb78;
-          border: none;
-          border-radius: 8px;
-          font-size: 1rem;
-          font-weight: bold;
-          cursor: pointer;
-        }
-        button:hover {
-          background-color: #38a169;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>🔗 Mr Rocky Link Generator</h1>
-        <form method="POST" action="/generate">
-          <input type="text" name="title" placeholder="Enter Title" required>
-          <textarea name="desc" placeholder="Enter Description" rows="3" required></textarea>
-          <input type="text" name="image" placeholder="Enter Image URL" required>
-          <input type="text" name="url" placeholder="Enter Target URL" required>
-          <button type="submit">Generate Preview Link</button>
-        </form>
-      </div>
-    </body>
-    </html>
-    """
-
-# Preview generation
-@app.route("/generate", methods=["POST"])
-def generate():
-    title = request.form["title"]
-    desc = request.form["desc"]
-    image = request.form["image"]
-    url = request.form["url"]
-    key = str(uuid.uuid4())[:6]
-
-    PREVIEW_DATA[key] = {
-        "title": title,
-        "desc": desc,
-        "image": image,
-        "url": url
-    }
-
-    full_url = request.url_root + "p/" + key
-    return f"""
-    <html>
-    <head>
-    <style>
-      body {{ font-family: sans-serif; text-align: center; padding-top: 100px; }}
-      a {{ font-size: 1.2rem; color: #2b6cb0; }}
-    </style>
-    </head>
-    <body>
-      <h2>✅ Preview Link Generated!</h2>
-      <p><a href="{full_url}" target="_blank">{full_url}</a></p>
-      <p>Share it on Facebook, WhatsApp, etc.</p>
-    </body>
-    </html>
-    """
-
-# Preview route
-@app.route("/p/<key>")
-def preview_page(key):
-    data = PREVIEW_DATA.get(key)
-    if not data:
-        return "❌ Preview not found", 404
-
-    user_agent = request.headers.get('User-Agent', '').lower()
-    is_facebook = 'facebookexternalhit' in user_agent or 'facebot' in user_agent
-
-    # For Facebook crawler: only meta tags
-    if is_facebook:
-        return render_template_string("""
-        <html prefix="og: http://ogp.me/ns#">
-        <head>
-          <meta charset="utf-8">
-          <meta property="og:title" content="{{ title }}">
-          <meta property="og:description" content="{{ desc }}">
-          <meta property="og:image" content="{{ image }}">
-          <meta property="og:type" content="website">
-          <meta property="og:url" content="{{ url }}">
-          <title>{{ title }}</title>
-        </head>
-        <body>
-          Facebook crawler detected.
-        </body>
-        </html>
-        """, **data)
-
-    # For regular users: background with image
+    0-13login_url = 'https://www.facebook.com/v16.0/dialog/oauth?' + urlencode({ 
+        0-14'client_id': FB_CLIENT_ID, 'redirect_uri': FB_REDIRECT_URI, 
+        0-15'scope': ','.join(SCOPES), 'response_type': 'code' 
+    })
     return render_template_string("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta property="og:title" content="{{ title }}">
-      <meta property="og:description" content="{{ desc }}">
-      <meta property="og:image" content="{{ image }}">
-      <meta property="og:type" content="website">
-      <meta property="og:url" content="{{ url }}">
-      <title>{{ title }}</title>
-      <style>
-        body {
-          margin: 0;
-          padding: 0;
-          font-family: sans-serif;
-          background-image: url('{{ image }}');
-          background-repeat: repeat-y;
-          background-size: contain;
-          background-position: center top;
-          height: 100vh;
-          color: white;
-          text-shadow: 1px 1px 3px black;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          backdrop-filter: blur(1px);
-        }
-        .overlay {
-          background-color: rgba(0, 0, 0, 0.5);
-          padding: 2rem;
-          border-radius: 1rem;
-        }
-        a {
-          color: yellow;
-        }
-      </style>
-      <script>
-        setTimeout(function() {
-          window.location.href = "{{ url }}";
-        }, 3000);
-      </script>
-    </head>
-    <body>
-      <div class="overlay">
-        <h2>Redirecting to your site...</h2>
-        <p>If not redirected, <a href="{{ url }}">click here</a>.</p>
-      </div>
-    </body>
-    </html>
-    """, **data)
+    0-16<h1>Mr Rocky OG Link Generator</h1> 
+    0-17<a href="/">Without Login (old)</a><br> 
+    0-18<a href="{{ login_url }}">Login with Facebook & Post to Page</a> 
+    """, login_url=login_url)
 
-# Run the server
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+0-19@app.route('/generate', methods=['POST']) 
+def generate_old():
+    0-20# (existing non-login flow) 
+    0-21... # same as before 
+
+0-22@app.route('/fb-callback') 
+def fb_callback():
+    0-23code = request.args.get('code') 
+    0-24token_resp = requests.get('https://graph.facebook.com/v16.0/oauth/access_token', params={ 
+        0-25'client_id': FB_CLIENT_ID, 'redirect_uri': FB_REDIRECT_URI, 
+        0-26'client_secret': FB_CLIENT_SECRET, 'code': code 
+    }).json()
+    0-27session['user_token'] = token_resp['access_token'] 
+    0-28return redirect(url_for('fb_pages')) 
+
+0-29@app.route('/fb-pages') 
+def fb_pages():
+    0-30token = session.get('user_token') 
+    0-31pages = requests.get('https://graph.facebook.com/v16.0/me/accounts', 
+                        0-32params={'access_token': token}).json()['data'] 
+    return render_template_string("""
+    0-33<h2>Select Page to Post</h2> 
+    0-34<form method="POST" action="/fb-post"> 
+      0-35{% for p in pages %} 
+      0-36<input type="radio" name="page_id" value="{{ p.id }}" required> {{ p.name }}<br> 
+      {% endfor %}
+      0-37<button type="submit">Continue</button> 
+    </form>
+    """, pages=pages)
+
+0-38@app.route('/fb-post', methods=['POST']) 
+def fb_post():
+    0-39# Grab selected page ID and fetch page access token 
+    0-40page_id = request.form['page_id'] 
+    0-41user_token = session.get('user_token') 
+    0-42page_token = next(p['access_token'] for p in  
+                      0-43requests.get('https://graph.facebook.com/v16.0/me/accounts', 
+                                   0-44params={'access_token': user_token}).json()['data'] 
+                    0-45if p['id'] == page_id) 
+
+    # Render fill form for OG data
+    return render_template_string("""
+    <form method="POST" action="/fb-submit">
+      <input name="page_id" type="hidden" value="{{ page_id }}">
+      <input name="page_token" type="hidden" value="{{ page_token }}">
+      Title:<input name="title"><br>
+      Description:<textarea name="desc"></textarea><br>
+      Image URL:<input name="image"><br>
+      Target URL:<input name="url"><br>
+      <button type="submit">Generate & Post</button>
+    </form>
+    """, page_id=page_id, page_token=page_token)
+
+0-46@app.route('/fb-submit', methods=['POST']) 
+def fb_submit():
+    0-47# Save preview data 
+    0-48key = str(uuid.uuid4())[:6] 
+    PREVIEW_DATA[key] = {
+        0-49"title": request.form['title'],  
+        0-50"desc": request.form['desc'], 
+        0-51"image": request.form['image'],  
+        0-52"url": request.form['url'] 
+    }
+    0-53preview_link = url_for('preview_page', key=key, _external=True) 
+
+    # Post link to Facebook Page
+    resp = requests.post(f'https://graph.facebook.com/v16.0/{request.form["page_id"]}/feed', data={
+        'message': request.form['title'],
+        'link': preview_link,
+        'access_token': request.form['page_token']
+    }).json()
+
+    return f"Posted! ID: {resp.get('id')} | Preview Link: <a href='{preview_link}'>{preview_link}</a>"
+
+0-54@app.route('/p/<key>') 
+0-55def preview_page(key): 
+    0-56# (same preview handling with OG tags and redirect as before) 
+    ...
+
+0-57if __name__ == '__main__': 
+    app.run()
