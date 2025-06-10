@@ -7,32 +7,7 @@ app = Flask(__name__)
 # In-memory store for previews
 PREVIEW_DATA = {}
 
-# Template for the OG preview page
-OG_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta property="og:title" content="{{ title }}">
-  <meta property="og:description" content="{{ desc }}">
-  <meta property="og:image" content="{{ image }}">
-  <meta property="og:type" content="website">
-  <meta http-equiv="refresh" content="3;url={{ url }}">
-  <title>{{ title }}</title>
-  <style>
-    body { font-family: sans-serif; text-align: center; padding-top: 50px; }
-    img { max-width: 300px; margin-top: 20px; }
-  </style>
-</head>
-<body>
-  <h2>Redirecting to your site...</h2>
-  <p>If you are not redirected, <a href="{{ url }}">click here</a>.</p>
-  <img src="{{ image }}" alt="Preview Image">
-</body>
-</html>
-"""
-
-# Form page
+# Form page HTML
 FORM_HTML = """
 <!DOCTYPE html>
 <html>
@@ -58,12 +33,12 @@ FORM_HTML = """
 </html>
 """
 
-# Home: form input
+# Home route: Form page
 @app.route("/", methods=["GET"])
 def home():
     return FORM_HTML
 
-# Generate preview and save data
+# Generate preview link
 @app.route("/generate", methods=["POST"])
 def generate():
     title = request.form["title"]
@@ -71,10 +46,10 @@ def generate():
     image = request.form["image"]
     url = request.form["url"]
 
-    # Create a unique key
+    # Generate a short key
     key = str(uuid.uuid4())[:6]
 
-    # Save data to dictionary
+    # Save data in memory
     PREVIEW_DATA[key] = {
         "title": title,
         "desc": desc,
@@ -82,7 +57,7 @@ def generate():
         "url": url
     }
 
-    # Return full preview link
+    # Return shareable preview link
     full_url = request.url_root + "p/" + key
     return f"""
     <p>✅ Preview link generated:</p>
@@ -90,15 +65,66 @@ def generate():
     <p>Share this link on Facebook, WhatsApp, etc.</p>
     """
 
-# Serve actual OG preview page
+# Serve OG preview page
 @app.route("/p/<key>")
 def preview_page(key):
     data = PREVIEW_DATA.get(key)
     if not data:
         return "❌ Preview not found", 404
-    return render_template_string(OG_TEMPLATE, **data)
 
-# Run the server
+    user_agent = request.headers.get('User-Agent', '').lower()
+    is_facebook = 'facebookexternalhit' in user_agent or 'facebot' in user_agent
+
+    # Serve OG meta tags without redirect for Facebook crawler
+    if is_facebook:
+        return render_template_string("""
+        <html prefix="og: http://ogp.me/ns#">
+        <head>
+          <meta charset="utf-8">
+          <meta property="og:title" content="{{ title }}">
+          <meta property="og:description" content="{{ desc }}">
+          <meta property="og:image" content="{{ image }}">
+          <meta property="og:type" content="website">
+          <meta property="og:url" content="{{ url }}">
+          <title>{{ title }}</title>
+        </head>
+        <body>
+          Facebook crawler detected. OG tags served.
+        </body>
+        </html>
+        """, **data)
+
+    # For normal users, show preview and redirect after 3 sec
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta property="og:title" content="{{ title }}">
+      <meta property="og:description" content="{{ desc }}">
+      <meta property="og:image" content="{{ image }}">
+      <meta property="og:type" content="website">
+      <meta property="og:url" content="{{ url }}">
+      <title>{{ title }}</title>
+      <style>
+        body { font-family: sans-serif; text-align: center; padding-top: 50px; }
+        img { max-width: 300px; margin-top: 20px; }
+      </style>
+      <script>
+        setTimeout(function() {
+          window.location.href = "{{ url }}";
+        }, 3000);
+      </script>
+    </head>
+    <body>
+      <h2>Redirecting to your site...</h2>
+      <p>If you are not redirected, <a href="{{ url }}">click here</a>.</p>
+      <img src="{{ image }}" alt="Preview Image">
+    </body>
+    </html>
+    """, **data)
+
+# Run server
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
