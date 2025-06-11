@@ -1,10 +1,12 @@
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template_string, send_from_directory, redirect, url_for
 import os
 import uuid
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB max
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# In-memory preview store
 PREVIEW_DATA = {}
 
 # Home Page (Form UI)
@@ -46,6 +48,10 @@ def home():
           border: none;
           border-radius: 8px;
         }
+        input[type="file"] {
+          background-color: #fff;
+          color: #000;
+        }
         button {
           width: 100%;
           padding: 0.8rem;
@@ -65,10 +71,11 @@ def home():
     <body>
       <div class="container">
         <h1>🔗 Mr Rocky Link Generator</h1>
-        <form method="POST" action="/generate">
+        <form method="POST" action="/generate" enctype="multipart/form-data">
           <input type="text" name="title" placeholder="Enter Title" required>
           <textarea name="desc" placeholder="Enter Description" rows="3" required></textarea>
-          <input type="text" name="image" placeholder="Enter Image URL" required>
+          <input type="file" name="image_file" accept="image/*">
+          <input type="text" name="image_url" placeholder="Or enter Image URL">
           <input type="text" name="url" placeholder="Enter Target URL" required>
           <button type="submit">Generate Preview Link</button>
         </form>
@@ -77,20 +84,33 @@ def home():
     </html>
     """
 
-# Preview generation
+# Generate preview
 @app.route("/generate", methods=["POST"])
 def generate():
     title = request.form["title"]
     desc = request.form["desc"]
-    image = request.form["image"]
-    url = request.form["url"]
-    key = str(uuid.uuid4())[:6]
+    target_url = request.form["url"]
 
+    image_url = request.form.get("image_url")
+    image_file = request.files.get("image_file")
+
+    if image_file and image_file.filename != "":
+        ext = os.path.splitext(image_file.filename)[1]
+        filename = f"{uuid.uuid4().hex}{ext}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        image_file.save(filepath)
+        image = url_for('uploaded_file', filename=filename, _external=True)
+    elif image_url:
+        image = image_url
+    else:
+        return "❌ Image required (upload or URL)", 400
+
+    key = str(uuid.uuid4())[:6]
     PREVIEW_DATA[key] = {
         "title": title,
         "desc": desc,
         "image": image,
-        "url": url
+        "url": target_url
     }
 
     full_url = request.url_root + "p/" + key
@@ -110,6 +130,11 @@ def generate():
     </html>
     """
 
+# Serve uploaded files
+@app.route('/static/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 # Preview route
 @app.route("/p/<key>")
 def preview_page(key):
@@ -120,7 +145,6 @@ def preview_page(key):
     user_agent = request.headers.get('User-Agent', '').lower()
     is_facebook = 'facebookexternalhit' in user_agent or 'facebot' in user_agent
 
-    # For Facebook crawler: only meta tags
     if is_facebook:
         return render_template_string("""
         <html prefix="og: http://ogp.me/ns#">
@@ -139,7 +163,6 @@ def preview_page(key):
         </html>
         """, **data)
 
-    # For regular users: background with image
     return render_template_string("""
     <!DOCTYPE html>
     <html>
@@ -193,8 +216,7 @@ def preview_page(key):
     </html>
     """, **data)
 
-# Run the server
+# Run server
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-    
